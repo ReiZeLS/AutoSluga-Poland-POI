@@ -1,0 +1,39 @@
+name: Build Poland automotive POI catalogue
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'START_EXTRACTION.md'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Download Poland OSM extract
+        run: |
+          mkdir -p work
+          curl -fL --retry 5 --retry-delay 15 --connect-timeout 30 'https://download.geofabrik.de/europe/poland-latest.osm.pbf' -o work/poland-latest.osm.pbf
+          test "$(stat -c %s work/poland-latest.osm.pbf)" -gt 1000000000
+          curl -fL --retry 3 'https://download.geofabrik.de/europe/poland-latest.osm.pbf.md5' -o work/poland-latest.osm.pbf.md5
+          (cd work && md5sum -c poland-latest.osm.pbf.md5)
+      - name: Extract automotive POIs
+        run: python scripts/build_poland_poi.py --input work/poland-latest.osm.pbf --output work/autosluga-output --chunk-size 1000
+      - name: Create artifact
+        run: |
+          cd work/autosluga-output
+          rm -f poi_staging.sqlite3 poi_staging.sqlite3-wal poi_staging.sqlite3-shm
+          zip -q -r ../AutoSluga_POI_POLAND_FULL.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoSluga_POI_POLAND_FULL
+          path: work/AutoSluga_POI_POLAND_FULL.zip
+          retention-days: 14
+          if-no-files-found: error
